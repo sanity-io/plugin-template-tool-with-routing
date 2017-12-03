@@ -60,7 +60,7 @@ class MyTool extends React.Component {
   // When unmounting, cancel any ongoing requests
   componentWillUnmount() {
     Object.keys(this.observables).forEach(obs => {
-      this.observables[key].unsubscribe()
+      this.observables[obs].unsubscribe()
     })
   }
 
@@ -78,7 +78,7 @@ class MyTool extends React.Component {
       <ul className={styles.list}>
         {documents.map(doc => (
           <li key={doc._id} className={styles.listItem}>
-            <StateLink state={{selectedDocumentId: document._id}}>
+            <StateLink state={{selectedDocumentId: doc._id}}>
               <Preview value={doc} type={schema.get(doc._type)} />
             </StateLink>
           </li>
