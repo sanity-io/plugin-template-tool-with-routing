@@ -12,6 +12,13 @@ import schema from 'part:@sanity/base/schema'
 // See https://github.com/css-modules/css-modules for more info.
 import styles from './MyTool.css'
 
+function getDocumentTypeNames() {
+  return schema.getTypeNames()
+    .map(typeName => schema.get(typeName))
+    .filter(type => type.type && type.type.name === 'document')
+    .map(type => type.name)
+}
+
 class MyTool extends React.Component {
   state = {}
   observables = {}
@@ -27,7 +34,7 @@ class MyTool extends React.Component {
   componentWillMount() {
     // Fetch 50 last updated, published documents
     this.observables.list = client.observable
-      .fetch('*[!(_id in path("drafts.**"))][0...50] | order (_updatedAt desc)')
+      .fetch('*[!(_id in path("drafts.**")) && _type in $types][0...50] | order (_updatedAt desc)', {types: getDocumentTypeNames()})
       .subscribe(this.handleReceiveList)
 
     // If we have a document ID as part of our route, load that document as well
