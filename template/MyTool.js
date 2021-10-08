@@ -1,137 +1,102 @@
-import React from 'react'
-import {StateLink, withRouterHOC, IntentLink} from 'part:@sanity/base/router'
-import Spinner from 'part:@sanity/components/loading/spinner'
-import Preview from 'part:@sanity/base/preview'
-import client from 'part:@sanity/base/client'
-import schema from 'part:@sanity/base/schema'
+import React, { useEffect, useState, useRef, useCallback } from "react";
+import client from "part:@sanity/base/client";
+import schema from "part:@sanity/base/schema";
+import { withRouterHOC } from "@sanity/base/router";
+import DocumentListItem from "./DocumentListItem";
+import DocumentList from "./DocumentList";
+import DocumentView from "./DocumentView";
+import styled from "styled-components";
+import { Flex } from "@sanity/ui";
 
-// Sanity uses CSS modules for styling. We import a stylesheet and get an
-// object where the keys matches the class names defined in the CSS file and
-// the values are a unique, generated class name. This allows you to write CSS
-// with only your components in mind without any conflicting class names.
-// See https://github.com/css-modules/css-modules for more info.
-import styles from './MyTool.css'
+const ToolRoot = styled(Flex)`
+  height: 100%;
+  width: 100%;
+`;
 
 function getDocumentTypeNames() {
-  return schema.getTypeNames()
-    .map(typeName => schema.get(typeName))
-    .filter(type => type.type && type.type.name === 'document')
-    .map(type => type.name)
+  return schema
+    .getTypeNames()
+    .map((typeName) => schema.get(typeName))
+    .filter((type) => type.type && type.type.name === "document")
+    .map((type) => type.name);
 }
 
-class MyTool extends React.Component {
-  state = {}
-  observables = {}
+function MyTool(props) {
+  const { router } = props;
+  const documentListRef = useRef(null);
+  const documentFetchRef = useRef(null);
+  const [documents, setDocuments] = useState(null);
+  const [currentDocument, setCurrentDocument] = useState();
+  const [currentDocumentId, setCurrentDocumentId] = useState(null);
 
-  handleReceiveList = documents => {
-    this.setState({documents})
-  }
+  const handleReceiveList = useCallback((documents) => {
+    setDocuments(documents);
+  }, []);
 
-  handleReceiveDocument = document => {
-    this.setState({document})
-  }
+  const handleReceiveDocument = useCallback((document) => {
+    setCurrentDocument(document);
+  }, []);
 
-  componentWillMount() {
-    // Fetch 50 last updated, published documents
-    this.observables.list = client.observable
-      .fetch('*[!(_id in path("drafts.**")) && _type in $types][0...50] | order (_updatedAt desc)', {types: getDocumentTypeNames()})
-      .subscribe(this.handleReceiveList)
-
-    // If we have a document ID as part of our route, load that document as well
-    const documentId = this.props.router.state.selectedDocumentId
-    if (documentId) {
-      this.fetchDocument(documentId)
-    }
-  }
-
-  fetchDocument(documentId) {
+  const fetchDocument = useCallback((documentId) => {
     // If we're already fetching a document, make sure to cancel that request
-    if (this.observables.document) {
-      this.observables.document.unsubscribe()
+    if (documentFetchRef.current) {
+      documentFetchRef.current.unsubscribe();
     }
 
-    this.observables.document = client.observable
+    if (!documentId) {
+      handleReceiveDocument(undefined)
+      
+      return;
+    }
+
+    documentFetchRef.current = client.observable
       .getDocument(documentId)
-      .subscribe(this.handleReceiveDocument)
-  }
+      .subscribe(handleReceiveDocument);
+  }, []);
 
-  componentWillReceiveProps(nextProps) {
-    const current = this.props.router.state.selectedDocumentId
-    const next = nextProps.router.state.selectedDocumentId
-
-    if (current !== next) {
-      this.fetchDocument(next)
-    }
-  }
-
-  // When unmounting, cancel any ongoing requests
-  componentWillUnmount() {
-    Object.keys(this.observables).forEach(obs => {
-      this.observables[obs].unsubscribe()
-    })
-  }
-
-  renderDocumentsList() {
-    const {documents} = this.state
-    if (!documents) {
-      return (
-        <div className={styles.list}>
-          <Spinner message="Loading..." center />}
-        </div>
+  useEffect(() => {
+    // Fetch 50 last updated, published documents
+    documentListRef.current = client.observable
+      .fetch(
+        '*[!(_id in path("drafts.**")) && _type in $types][0...50] | order (_updatedAt desc)',
+        { types: getDocumentTypeNames() }
       )
-    }
+      .subscribe(handleReceiveList);
 
-    return (
-      <ul className={styles.list}>
-        {documents.map(doc => (
-          <li key={doc._id} className={styles.listItem}>
-            <StateLink state={{selectedDocumentId: doc._id}}>
-              <Preview value={doc} type={schema.get(doc._type)} />
-            </StateLink>
-          </li>
-        ))}
-      </ul>
-    )
-  }
+    return () => {
+      // When unmounting, cancel any ongoing requests
+      if (documentListRef.current) {
+        documentListRef.current.unsubscribe();
+      }
 
-  renderDocumentView() {
-    const {document} = this.state
-    if (!document) {
-      return (
-        <div className={styles.document}>
-          <Spinner message="Loading document..." center />}
-        </div>
-      )
-    }
+      if (documentFetchRef.current) {
+        documentFetchRef.current.unsubscribe();
+      }
+    };
+  }, []);
 
-    const {_id, _type} = document
-    return (
-      <div className={styles.document}>
-        <h2>
-          {_id} -{' '}
-          <IntentLink intent="edit" params={{id: _id, type: _type}}>
-            Edit
-          </IntentLink>
-        </h2>
+  useEffect(() => {
+    // If we have a document ID as part of our route, load that document as well
+    setCurrentDocumentId(router.state.selectedDocumentId);
+    fetchDocument(router.state.selectedDocumentId);
+  }, [router.state.selectedDocumentId]);
 
-        <pre>
-          <code>{JSON.stringify(document, null, 2)}</code>
-        </pre>
-      </div>
-    )
-  }
-
-  render() {
-    const {documents, document} = this.state
-    const {selectedDocumentId} = this.props.router.state
-
-    return (
-      <div className={styles.container}>
-        {this.renderDocumentsList()}
-        {selectedDocumentId && this.renderDocumentView()}
-      </div>
-    )
-  }
+  return (
+    <ToolRoot>
+      <DocumentList>
+        {documents &&
+          documents.map((doc) => (
+            <DocumentListItem
+              key={doc._id}
+              document={doc}
+              schemaType={schema.get(doc._type)}
+              selected={currentDocumentId === doc._id}
+            />
+          ))}
+      </DocumentList>
+      <DocumentView document={currentDocument} />
+    </ToolRoot>
+  );
 }
 
-export default withRouterHOC(MyTool)
+export default withRouterHOC(MyTool);
